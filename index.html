@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -30,14 +29,14 @@
       font-size: 1.875rem;
       font-weight: bold;
     }
-    .selector-panel, .diagnosis-panel {
+    .selector-panel {
       background-color: white;
       border-radius: 8px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
       padding: 16px;
       margin-bottom: 24px;
     }
-    .selector-panel h2, .diagnosis-panel h2 {
+    .selector-panel h2 {
       font-size: 1.125rem;
       color: #374151;
       margin-bottom: 12px;
@@ -72,7 +71,6 @@
       border-radius: 8px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
       overflow: hidden;
-      margin-bottom: 24px;
     }
     .data-table {
       width: 100%;
@@ -189,22 +187,6 @@
       font-size: 0.875rem;
       color: #4b5563;
     }
-    .diagnosis-result {
-      font-weight: bold;
-      color: #2563eb;
-      margin-top: 12px;
-    }
-    .diagnosis-item {
-      margin-bottom: 8px;
-    }
-    .dropdown {
-      padding: 4px 8px;
-      font-size: 0.875rem;
-      border-radius: 4px;
-      border: 1px solid #d1d5db;
-      margin-left: 12px;
-      min-width: 250px;
-    }
   </style>
 </head>
 <body>
@@ -221,63 +203,72 @@
       const [activeConditions, setActiveConditions] = useState([]);
       const [expandedRows, setExpandedRows] = useState({});
       const [fileName, setFileName] = useState('');
-      const [diagnosisSelections, setDiagnosisSelections] = useState({});
-      const [diagnosisResult, setDiagnosisResult] = useState(null);
       
       const handleFileUpload = (event) => {
         const file = event.target.files[0];
         if (!file) return;
+        
+        // Verificare che sia un file Excel
         if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
           setError('Il file deve essere in formato Excel (.xlsx o .xls)');
           return;
         }
+        
         setFileName(file.name);
         setLoading(true);
         setError(null);
+        
         const reader = new FileReader();
+        
         reader.onload = (e) => {
           try {
-            const fileData = new Uint8Array(e.target.result);
-            processExcelFile(fileData);
+            const data = new Uint8Array(e.target.result);
+            processExcelFile(data);
           } catch (err) {
             console.error('Errore nella lettura del file:', err);
             setError('Si è verificato un errore nella lettura del file.');
             setLoading(false);
           }
         };
+        
         reader.onerror = () => {
           setError('Si è verificato un errore nella lettura del file.');
           setLoading(false);
         };
+        
         reader.readAsArrayBuffer(file);
       };
       
-      const processExcelFile = (dataBuffer) => {
+      const processExcelFile = (data) => {
         try {
-          const workbook = XLSX.read(dataBuffer, { cellStyles: true, cellDates: true, cellNF: true });
+          const workbook = XLSX.read(data, {
+            cellStyles: true,
+            cellDates: true,
+            cellNF: true,
+          });
+          
           const firstSheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[firstSheetName];
+          
+          // Convertire in array di oggetti
           const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          
           if (jsonData.length > 0) {
             const headerRow = jsonData[0].filter(h => h !== null && h !== undefined);
             setHeaders(headerRow);
-            // Impostare di default le condizioni attive per la visualizzazione tabellare
+            
+            // Impostare le prime due condizioni come attive di default (se disponibili)
             if (headerRow.length > 2) {
               setActiveConditions([headerRow[1], headerRow[2]]);
             } else if (headerRow.length > 1) {
               setActiveConditions([headerRow[1]]);
             }
-            const tableData = jsonData.slice(1).filter(row => row.length > 0);
-            setData(tableData);
-            // Inizializza le scelte per ogni caratteristica come "Non selezionato"
-            const initialSelections = {};
-            tableData.forEach((row, index) => {
-              initialSelections[index] = "Non selezionato";
-            });
-            setDiagnosisSelections(initialSelections);
+            
+            setData(jsonData.slice(1).filter(row => row.length > 0)); // Rimuovere l'header e le righe vuote
           } else {
             setError('Il file non contiene dati validi.');
           }
+          
           setLoading(false);
         } catch (err) {
           console.error('Errore nell\'elaborazione del file Excel:', err);
@@ -297,30 +288,14 @@
       };
       
       const toggleRowExpand = (index) => {
-        setExpandedRows(prev => ({ ...prev, [index]: !prev[index] }));
+        setExpandedRows(prev => ({
+          ...prev,
+          [index]: !prev[index]
+        }));
       };
       
-      const getConditionIndex = (condition) => headers.findIndex(h => h === condition);
-      
-      const handleSelectionChange = (rowIndex, value) => {
-        setDiagnosisSelections(prev => ({ ...prev, [rowIndex]: value }));
-      };
-      
-      const calculateDiagnosis = () => {
-        // Conta i voti per ogni diagnosi (utilizzando il valore associato, che ora è il nome della colonna)
-        const counts = { "Tricoepitelioma (TE)": 0, "Tricoblastoma (TB)": 0, "Carcinoma basocellulare (BCC)": 0 };
-        Object.values(diagnosisSelections).forEach(choice => {
-          if (counts.hasOwnProperty(choice)) counts[choice]++;
-        });
-        let max = 0;
-        let result = [];
-        for (const key in counts) {
-          if (counts[key] > max) { max = counts[key]; result = [key]; }
-          else if (counts[key] === max && max !== 0) result.push(key);
-        }
-        if (result.length === 0) setDiagnosisResult("Nessuna selezione valida.");
-        else if (result.length === 1) setDiagnosisResult("La diagnosi più probabile è: " + result[0]);
-        else setDiagnosisResult("Diagnosi inconcludente: parità tra " + result.join(" e "));
+      const getConditionIndex = (condition) => {
+        return headers.findIndex(h => h === condition);
       };
       
       if (loading) {
@@ -338,7 +313,10 @@
             <div className="error-box">
               <p><strong>Errore</strong></p>
               <p>{error}</p>
-              <button onClick={() => setError(null)} style={{ marginTop: '10px', padding: '5px 10px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+              <button 
+                onClick={() => setError(null)} 
+                style={{ marginTop: '10px', padding: '5px 10px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+              >
                 Riprova
               </button>
             </div>
@@ -355,7 +333,12 @@
           <div className="file-input-container">
             <label className="file-input-label">
               Carica il file Excel
-              <input type="file" className="file-input" accept=".xlsx, .xls" onChange={handleFileUpload} />
+              <input 
+                type="file" 
+                className="file-input" 
+                accept=".xlsx, .xls" 
+                onChange={handleFileUpload} 
+              />
             </label>
             {fileName && <div className="file-name">File selezionato: {fileName}</div>}
           </div>
@@ -366,7 +349,11 @@
                 <h2>Seleziona le condizioni da confrontare:</h2>
                 <div className="button-group">
                   {headers.slice(1).map((condition, index) => (
-                    <button key={index} className={`condition-button ${activeConditions.includes(condition) ? 'active' : 'inactive'}`} onClick={() => toggleCondition(condition)}>
+                    <button
+                      key={index}
+                      className={`condition-button ${activeConditions.includes(condition) ? 'active' : 'inactive'}`}
+                      onClick={() => toggleCondition(condition)}
+                    >
                       {condition}
                     </button>
                   ))}
@@ -379,25 +366,33 @@
                     <thead>
                       <tr>
                         <th style={{ width: '25%' }}>Caratteristica</th>
-                        {activeConditions.map((condition, index) => <th key={index}>{condition}</th>)}
+                        {activeConditions.map((condition, index) => (
+                          <th key={index}>{condition}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {data.map((row, rowIndex) => {
+                        const caratteristica = row[0];
                         const isExpanded = expandedRows[rowIndex] === true;
+                        
                         return (
                           <tr key={rowIndex}>
                             <td onClick={() => toggleRowExpand(rowIndex)}>
                               <div className="row-header">
                                 <span>{isExpanded ? '▼' : '▶'}</span>
-                                {row[0]}
+                                {caratteristica}
                               </div>
                             </td>
                             {activeConditions.map((condition, condIndex) => {
                               const cellIndex = getConditionIndex(condition);
                               const content = row[cellIndex] || '';
+                              
                               return (
-                                <td key={condIndex} onClick={() => toggleRowExpand(rowIndex)}>
+                                <td 
+                                  key={condIndex} 
+                                  onClick={() => toggleRowExpand(rowIndex)}
+                                >
                                   <div className={isExpanded ? 'full-text' : 'truncated'}>
                                     {content}
                                   </div>
@@ -415,34 +410,10 @@
               <div className="instructions">
                 <p><strong>Come utilizzare questa app:</strong></p>
                 <ul>
-                  <li>Seleziona le condizioni da confrontare utilizzando i pulsanti in alto.</li>
-                  <li>Clicca su una riga per espandere/comprimere il testo completo.</li>
-                  <li>Nel pannello interattivo, per ciascuna caratteristica, scegli dal menu a tendina la descrizione completa che ritieni più compatibile.</li>
+                  <li>Seleziona le condizioni da confrontare utilizzando i pulsanti in alto</li>
+                  <li>Clicca su una riga per espandere/comprimere il testo completo</li>
+                  <li>Confronta le caratteristiche di ciascuna condizione nella tabella</li>
                 </ul>
-              </div>
-              
-              <div className="diagnosis-panel">
-                <h2>Selezione Diagnostica Interattiva</h2>
-                {data.map((row, rowIndex) => (
-                  <div key={rowIndex} className="diagnosis-item">
-                    <span>{row[0]}:</span>
-                    <select className="dropdown" value={diagnosisSelections[rowIndex] || "Non selezionato"} onChange={(e) => handleSelectionChange(rowIndex, e.target.value)}>
-                      <option value="Non selezionato">Non selezionato</option>
-                      {headers.slice(1).map((header, i) => {
-                        const colIndex = i + 1;
-                        return (
-                          <option key={colIndex} value={header}>
-                            {row[colIndex] ? row[colIndex] : header}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                ))}
-                <button onClick={calculateDiagnosis} style={{ marginTop: '12px', padding: '8px 16px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
-                  Calcola Diagnosi
-                </button>
-                {diagnosisResult && <div className="diagnosis-result">{diagnosisResult}</div>}
               </div>
             </>
           )}
